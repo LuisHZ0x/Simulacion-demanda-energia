@@ -386,7 +386,9 @@ class SimulacionUI:
         # Botón Tormenta
         scol = (100, 50, 50) if not self.modo_tormenta else (200, 50, 50)
         pygame.draw.rect(self.screen, scol, self.btn_storm, border_radius=5)
-        st_txt = self.font_md.render("⚡ MODO TORMENTA ⚡", True, Palette.WHITE)
+        
+        st_txt = self.font_md.render("MODO TORMENTA", True, Palette.WHITE)
+        
         tr = st_txt.get_rect(center=self.btn_storm.center)
         self.screen.blit(st_txt, tr)
 

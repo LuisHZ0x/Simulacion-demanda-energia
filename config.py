@@ -3,8 +3,8 @@ import pygame
 # ============================================================
 # DIMENSIONES DE PANTALLA (Ajustado a 1100x750)
 # ============================================================
-SCREEN_WIDTH = 1100
-SCREEN_HEIGHT = 750
+SCREEN_WIDTH = 1300
+SCREEN_HEIGHT = 800
 FPS = 60
 
 # ============================================================
@@ -31,8 +31,8 @@ GRID_HEIGHT = SCREEN_HEIGHT - HEADER_HEIGHT - GRAPH_HEIGHT
 GRID_RECT = (0, HEADER_HEIGHT, MAIN_AREA_WIDTH, GRID_HEIGHT)
 
 # Configuración Grid Sólida
-GRID_FILAS = 6
-GRID_COLUMNAS = 8
+GRID_FILAS = 8
+GRID_COLUMNAS = 9
 GRID_MARGIN_X = 30
 GRID_MARGIN_Y = 15
 
@@ -83,22 +83,22 @@ class SimConfig:
 SUBESTACIONES_CONFIG = {
     "Pequeña": {
         "color": Palette.AMBER,
-        "capacidad": "80 MW",
-        "capacidad_kw": 80000,
+        "capacidad": "55 MW",
+        "capacidad_kw": 55000,
         "costo": 50000,
         "icono": "⚡"
     },
     "Mediana": {
         "color": Palette.CYAN,
-        "capacidad": "150 MW",
-        "capacidad_kw": 150000,
+        "capacidad": "110 MW",
+        "capacidad_kw": 110000,
         "costo": 120000,
         "icono": "🔋"
     },
     "Grande": {
         "color": Palette.MAGENTA,
-        "capacidad": "300 MW",
-        "capacidad_kw": 300000,
+        "capacidad": "220 MW",
+        "capacidad_kw": 220000,
         "costo": 250000,
         "icono": "🏭"
     }
