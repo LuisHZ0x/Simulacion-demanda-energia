@@ -249,8 +249,8 @@ class ResultadoAnual:
         
         # Eficiencia: promedio de uso de capacidad
         capacidad = self.datos["capacidad_kw"]
-        if len(self.historial_demanda) > 0:
-            promedio_demanda = sum(d[2] for d in self.historial_demanda) / len(self.historial_demanda)
+        if len(self.historial_horas) > 0:
+            promedio_demanda = sum(self.historial_horas) / len(self.historial_horas)
             eficiencia = (promedio_demanda / capacidad) * 100
         else:
             promedio_demanda = 0
@@ -356,7 +356,7 @@ def encontrar_mejor_subestacion(edificios: List[Edificio]) -> Tuple[str, List[Di
         res = simular_año(tipo, edificios)
         metricas = res.calcular_metricas()
         resultados.append(metricas)
-        print(f"  📊 {tipo}: ${metricas['costo_total']:,.0f} | "
+        print(f"{tipo}: ${metricas['costo_total']:,.0f} | "
               f"Blackouts: {metricas['blackouts']}h | "
               f"Eficiencia: {metricas['eficiencia']:.1f}%")
     
@@ -370,7 +370,7 @@ def encontrar_mejor_subestacion(edificios: List[Edificio]) -> Tuple[str, List[Di
         # Si todas tienen blackouts, elegir la que menos falló
         ganadora = min(resultados, key=lambda x: x["blackouts"])
     
-    print(f"\n✅ ÓPTIMA ELEGIDA: {ganadora['tipo']}")
+    print(f"\n ÓPTIMA ELEGIDA: {ganadora['tipo']}")
     print(f"   Costo: ${ganadora['costo_total']:,.0f}")
     print(f"   Confiabilidad: {ganadora['confiabilidad']:.1f}%")
     

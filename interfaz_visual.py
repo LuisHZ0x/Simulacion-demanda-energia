@@ -116,8 +116,11 @@ class SimulacionUI:
         self.consumo_smooth = 0
         self.sub_actual = "Mediana"
         self.blackout = False
+        self.blackout_prev = False  # Para detectar cambios
+        self.blackouts_session = 0  # Contador acumulativo de blackouts en sesión
         self.modo_tormenta = False
         self.tormenta_timer = 0
+        self.tormentas_count = 0
         
         # Gráfica (Historial más largo para ver mejor)
         self.history_len = 800 
@@ -172,9 +175,17 @@ class SimulacionUI:
                 mx, my = pygame.mouse.get_pos()
                 
                 if self.modal_active:
-                    self.modal_active = False
-                    self.audio.play_click()
-                    return True
+                    # Detectar clic en el botón cerrar
+                    close_btn_width, close_btn_height = 150, 35
+                    close_btn_x = (SCREEN_WIDTH - close_btn_width) // 2
+                    close_btn_y = (SCREEN_HEIGHT - 600)//2 + 600 - 50  # my + mh - 50
+                    
+                    close_rect = pygame.Rect(close_btn_x, close_btn_y, close_btn_width, close_btn_height)
+                    if close_rect.collidepoint(mx, my):
+                        self.modal_active = False
+                        self.audio.play_click()
+                        return True
+                    return True  # Si se hace clic fuera del botón, no cerrar
                 
                 # Velocidad
                 for b in self.btn_speeds:
@@ -192,6 +203,7 @@ class SimulacionUI:
                 if self.btn_storm.collidepoint(mx, my):
                     self.modo_tormenta = True
                     self.tormenta_timer = 300 # 5 segundos de caos
+                    self.tormentas_count += 1  # Registrar tormenta
                     self.audio.play_alert() # Sonido inicial
                     
                 # Optimizar
@@ -201,6 +213,9 @@ class SimulacionUI:
         return True
 
     def run_optimization(self):
+        # Guardar la subestación actual antes de la simulación
+        subestacion_actual = self.sub_actual
+        
         # Loading simple
         self.screen.fill(Palette.BG_DARKEST)
         t = self.font_lg.render("CALCULANDO EFICIENCIA ANUAL...", True, Palette.CYAN)
@@ -209,7 +224,7 @@ class SimulacionUI:
         pygame.display.flip()
         
         best, res = encontrar_mejor_subestacion(self.edificios)
-        self.modal_data = (best, res)
+        self.modal_data = (best, res, subestacion_actual)  # Incluir subestación actual
         self.modal_active = True
         self.sub_actual = best
 
@@ -253,6 +268,11 @@ class SimulacionUI:
         # Blackout
         cap = SUBESTACIONES_CONFIG[self.sub_actual]["capacidad_kw"]
         self.blackout = self.consumo_total > cap
+        
+        # Contar blackouts acumulativos (solo cuando inicia)
+        if self.blackout and not self.blackout_prev:
+            self.blackouts_session += 1
+        self.blackout_prev = self.blackout
         
         if self.blackout and random.random() < 0.02:
             self.audio.play_alert()
@@ -484,27 +504,146 @@ class SimulacionUI:
 
 
     def draw_modal(self):
+        # Modal simplificado con mejor espaciado
         s = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        s.fill((0,0,0,200)) # Dim background
+        s.fill((0,0,0,200))
         self.screen.blit(s, (0,0))
-        
-        mw, mh = 650, 450
+
+        mw, mh = 800, 600
         mx, my = (SCREEN_WIDTH-mw)//2, (SCREEN_HEIGHT-mh)//2
         pygame.draw.rect(self.screen, Palette.BG_PANEL, (mx, my, mw, mh), border_radius=12)
         pygame.draw.rect(self.screen, Palette.CYAN, (mx, my, mw, mh), 2, border_radius=12)
-        
-        win, res = self.modal_data
-        
-        self.screen.blit(self.font_lg.render(f"MEJOR SUBESTACIÓN: {win.upper()}", True, Palette.NEON_GREEN), (mx+30, my+30))
-        
-        ty = my+90
-        for r in res:
-            color = Palette.NEON_GREEN if r['tipo'] == win else Palette.WHITE
-            txt = f"{r['tipo']}: ${r['costo_total']:,} | Apagones: {r['blackouts']}h | Efic: {r['eficiencia']:.1f}%"
-            self.screen.blit(self.font_md.render(txt, True, color), (mx+30, ty))
-            ty += 50
+
+        win, res, current_sub = self.modal_data
+
+        # Título principal
+        title = self.font_xl.render(f"SUBESTACIÓN ÓPTIMA: {win.upper()}", True, Palette.NEON_GREEN)
+        tr = title.get_rect(center=(SCREEN_WIDTH//2, my + 35))
+        self.screen.blit(title, tr)
+
+        # Subtítulo con subestación actual
+        subtitle = self.font_md.render(f"Simulación realizada con subestación: {current_sub}", True, Palette.AMBER)
+        sr = subtitle.get_rect(center=(SCREEN_WIDTH//2, my + 65))
+        self.screen.blit(subtitle, sr)
+
+        # Mostrar cada subestación en columnas ordenadas
+        col_width = 220
+        start_x = mx + 40
+        start_y = my + 90
+
+        for i, r in enumerate(res):
+            col_x = start_x + (i * col_width)
+            is_winner = r['tipo'] == win
+            is_current = r['tipo'] == current_sub  # Subestación usada en la simulación
+
+            # Nombre de subestación
+            color = Palette.NEON_GREEN if is_winner else Palette.WHITE
+            name_text = f"{r['tipo']} ({r['capacidad_mw']} MW)"
+            self.screen.blit(self.font_lg.render(name_text, True, color), (col_x, start_y))
+
+            # Indicadores
+            indicator_y = start_y + 28
+            if is_winner:
+                winner_text = self.font_sl.render("✓ RECOMENDADA", True, Palette.NEON_GREEN)
+                self.screen.blit(winner_text, (col_x, indicator_y))
+                indicator_y += 18
             
-        self.screen.blit(self.font_sl.render("[CLIC PARA CERRAR]", True, Palette.GRAY), (mx+mw/2-60, my+mh-40))
+            if is_current:
+                current_text = self.font_sl.render("x ACTUAL", True, Palette.AMBER)
+                self.screen.blit(current_text, (col_x, indicator_y))
+
+            # Estadísticas principales
+            stats_y = start_y + 70  # Ajustado para dar espacio a los indicadores
+            
+            # Ajustar valores para la subestación actual basada en blackouts de sesión
+            costo = r['costo_total']
+            blackouts = r['blackouts']
+            confiabilidad = r['confiabilidad']
+            eficiencia = r['eficiencia']
+            
+            if is_current and self.blackouts_session > 0:
+                # Calcular horas totales (simulación + sesión)
+                horas_simulacion = 365 * 24
+                horas_session = (self.dia - 1) * 24 + self.hora + self.minuto / 60.0
+                horas_totales = horas_simulacion + horas_session
+                
+                # Blackouts totales
+                blackouts_total = r['blackouts'] + self.blackouts_session
+                
+                # Recalcular confiabilidad (más sensible a blackouts)
+                downtime_ratio = blackouts_total / horas_totales
+                confiabilidad = max(0, (1 - downtime_ratio * 10) * 100)  # Factor 10x más penalizante
+                
+                # Mantener eficiencia igual (no se recalcula fácilmente en tiempo real)
+                blackouts = blackouts_total
+            
+            stats = [
+                f"Costo: ${costo:,.0f}",
+                f"Blackouts: {blackouts}h",
+                f"Confiabilidad: {confiabilidad:.1f}%",
+                f"Eficiencia: {eficiencia:.1f}%"
+            ]
+
+            for stat in stats:
+                self.screen.blit(self.font_md.render(stat, True, Palette.GRAY), (col_x, stats_y))
+                stats_y += 25
+
+            # Barra de confiabilidad visual
+            bar_y = stats_y + 15
+            bar_width = 180
+            bar_height = 26
+            conf_pct = confiabilidad / 100
+
+            # Background bar
+            pygame.draw.rect(self.screen, (40,40,50), (col_x, bar_y, bar_width, bar_height), border_radius=8)
+            # Fill bar
+            fill_color = Palette.NEON_GREEN if conf_pct > 0.95 else (Palette.AMBER if conf_pct > 0.8 else Palette.NEON_RED)
+            pygame.draw.rect(self.screen, fill_color, (col_x, bar_y, int(bar_width * conf_pct), bar_height), border_radius=8)
+
+            # Percentage text
+            pct_text = f"{confiabilidad:.1f}%"
+            pt = self.font_sl.render(pct_text, True, Palette.WHITE)
+            self.screen.blit(pt, (col_x + bar_width//2 - 20, bar_y + 2))
+
+        # Resumen comparativo abajo
+        summary_y = my + 380
+        pygame.draw.line(self.screen, Palette.CYAN, (mx + 30, summary_y), (mx + mw - 30, summary_y), 1)
+
+        summary_title = self.font_md.render("RESUMEN DE ANÁLISIS", True, Palette.CYAN)
+        self.screen.blit(summary_title, (mx + 40, summary_y + 15))
+
+        # Calcular estadísticas simples
+        total_blackouts = sum(r['blackouts'] for r in res)
+        best_conf = max(r['confiabilidad'] for r in res)
+        worst_conf = min(r['confiabilidad'] for r in res)
+        
+        # Estadísticas de la sesión actual
+        horas_session = (self.dia - 1) * 24 + self.hora + self.minuto / 60.0
+        if horas_session > 0:
+            downtime_session = self.blackouts_session / horas_session
+            confiabilidad_session = max(0, (1 - downtime_session * 10) * 100)
+        else:
+            confiabilidad_session = 100.0
+
+        summary_lines = [
+            f"Tormentas simuladas: {self.tormentas_count}",
+            f"Subestación seleccionada: {current_sub}",
+            f"Blackouts en sesión: {self.blackouts_session} horas",
+            f"Confiabilidad sesión: {confiabilidad_session:.1f}% ({horas_session:.1f}h simuladas)"
+        ]
+
+        for i, line in enumerate(summary_lines):
+            self.screen.blit(self.font_sl.render(line, True, Palette.GRAY), (mx + 40, summary_y + 40 + i * 20))
+
+        # Botón cerrar
+        close_btn_width, close_btn_height = 150, 35
+        close_btn_x = (SCREEN_WIDTH - close_btn_width) // 2
+        close_btn_y = my + mh - 50
+
+        pygame.draw.rect(self.screen, Palette.NEON_GREEN, (close_btn_x, close_btn_y, close_btn_width, close_btn_height), border_radius=6)
+        close_text = self.font_md.render("CERRAR", True, (0,0,0))
+        ct_rect = close_text.get_rect(center=(close_btn_x + close_btn_width//2, close_btn_y + close_btn_height//2))
+        self.screen.blit(close_text, ct_rect)
 
 if __name__ == "__main__":
     app = SimulacionUI()
