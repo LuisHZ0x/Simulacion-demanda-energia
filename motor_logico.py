@@ -9,24 +9,24 @@ from datetime import datetime, timedelta
 # ============================================================
 SUBESTACIONES = {
     "Pequeña": {
-        "capacidad_kw": 80000,       # 80 MW
-        "capacidad_mw": 80,
+        "capacidad_kw": 55000,       # 60 MW
+        "capacidad_mw": 55,
         "costo_inversion": 50000,    # $50k instalación
         "costo_operativo_hora": 15,  # $15/hora operar
         "color": (251, 191, 36),     # Amarillo
         "nombre": "Subestación Compacta"
     },
     "Mediana": {
-        "capacidad_kw": 150000,      # 150 MW
-        "capacidad_mw": 150,
+        "capacidad_kw": 110000,      # 110 MW
+        "capacidad_mw": 110,
         "costo_inversion": 120000,   # $120k instalación
         "costo_operativo_hora": 25,  # $25/hora operar
         "color": (34, 211, 238),     # Cyan
         "nombre": "Subestación Estándar"
     },
     "Grande": {
-        "capacidad_kw": 300000,      # 300 MW
-        "capacidad_mw": 300,
+        "capacidad_kw": 220000,      # 220 MW
+        "capacidad_mw": 220,
         "costo_inversion": 250000,   # $250k instalación
         "costo_operativo_hora": 50,  # $50/hora operar
         "color": (232, 121, 249),    # Magenta
@@ -200,16 +200,28 @@ def generar_ciudad() -> List[Edificio]:
     cell_h = available_h // GRID_FILAS
     
     # Margen entre edificios
-    gap = 10
+    gap = 20
     edificio_w = cell_w - gap
     edificio_h = cell_h - gap
+
+    contador_industrias = 0
+    limite_industrias = (GRID_FILAS * GRID_COLUMNAS) // 8  # Máximo 12.5% industriales
     
     for fil in range(GRID_FILAS):
         for col in range(GRID_COLUMNAS):
             x = start_x + (col * cell_w) + (gap // 2)
             y = start_y + (fil * cell_h) + (gap // 2)
-            
+
+            # Elegimos un tipo al azar
             tipo = random.choices(tipos, weights=pesos)[0]
+
+           # CONDICIONAL: Si salió industrial pero ya hay 6, lo cambiamos a residencial
+            if tipo == "industrial":
+                if contador_industrias < limite_industrias:
+                    contador_industrias += 1
+                else:
+                    # Si ya llegamos al límite, forzamos que sea residencial (o comercial)
+                    tipo = "residencial"
             edif = Edificio(x, y, edificio_w, edificio_h, tipo)
             edificios.append(edif)
     
