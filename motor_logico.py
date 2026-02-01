@@ -1,4 +1,5 @@
 import random
+import simpy
 import math
 from typing import List, Dict, Tuple
 import pygame
@@ -9,7 +10,7 @@ from datetime import datetime, timedelta
 # ============================================================
 SUBESTACIONES = {
     "Pequeña": {
-        "capacidad_kw": 55000,       # 60 MW
+        "capacidad_kw": 55000,       # 55 MW
         "capacidad_mw": 55,
         "costo_inversion": 50000,    # $50k instalación
         "costo_operativo_hora": 15,  # $15/hora operar
@@ -275,57 +276,68 @@ class ResultadoAnual:
 
 def simular_año(tipo_subestacion: str, edificios: List[Edificio]) -> ResultadoAnual:
     """
-    Simula 1 año completo (365 días × 24 horas) con una subestación específica.
+    Simula 1 año completo (365 días × 24 horas) con una subestación específica usando SimPy.
     """
     resultado = ResultadoAnual(tipo_subestacion)
     capacidad_max = resultado.datos["capacidad_kw"]
     
-    print(f"🔄 Simulando año con Subestación {tipo_subestacion}...")
+    print(f"Simulando año con Subestación {tipo_subestacion}...")
     
-    # Simulación anual con temperaturas fluctuantes
-    for dia in range(365):
-        # Temperatura diaria con variación estacional y aleatoria
-        # Simulación de estaciones: días 0-90 verano, 91-180 otoño, 181-270 invierno, 271-364 primavera
-        if dia < 90:  # Verano
-            temp_base = random.uniform(28, 35)
-        elif dia < 180:  # Otoño
-            temp_base = random.uniform(22, 28)
-        elif dia < 270:  # Invierno
-            temp_base = random.uniform(18, 25)
-        else:  # Primavera
-            temp_base = random.uniform(20, 30)
-        
-        # Variación horaria de temperatura
-        for hora in range(24):
-            # Variación diaria de temperatura: más fresco al amanecer, más caliente al mediodía
-            if 6 <= hora <= 14:
-                temperatura_hora = temp_base + (hora - 6) * 0.8  # Calentamiento
-            elif 14 < hora <= 20:
-                temperatura_hora = temp_base + (20 - hora) * 0.4  # Enfriamiento gradual
-            else:
-                temperatura_hora = temp_base - 2  # Noche más fresca
+    # Crear entorno de SimPy
+    env = simpy.Environment()
+    
+    # Proceso de simulación
+    def proceso_simulacion():
+        for dia in range(365):
+            # Temperatura diaria con variación estacional y aleatoria
+            # Simulación de estaciones: días 0-90 verano, 91-180 otoño, 181-270 invierno, 271-364 primavera
+            if dia < 90:  # Verano
+                temp_base = random.uniform(28, 35)
+            elif dia < 180:  # Otoño
+                temp_base = random.uniform(22, 28)
+            elif dia < 270:  # Invierno
+                temp_base = random.uniform(18, 25)
+            else:  # Primavera
+                temp_base = random.uniform(20, 30)
             
-            # Añadir variación aleatoria pequeña
-            temperatura_hora += random.uniform(-0.5, 0.5)
-            temperatura_hora = max(18.0, min(35.0, temperatura_hora))
-            
-            # Calcular consumo total de todos los edificios
-            consumo_total = 0
-            for edif in edificios:
-                consumo = edif.calcular_consumo(hora, temperatura_hora)
-                consumo_total += consumo
-            
-            # Verificar blackout
-            en_blackout = consumo_total > capacidad_max
-            if en_blackout:
-                resultado.blackouts += 1
-            
-            # Guardar dato histórico (una muestra cada hora)
-            resultado.historial_horas.append(consumo_total)
-            
-            # Guardar datos cada 6 horas para estadísticas
-            if hora % 6 == 0:
-                resultado.historial_demanda.append((dia, hora, consumo_total, temperatura_hora))
+            # Variación horaria de temperatura
+            for hora in range(24):
+                # Variación diaria de temperatura: más fresco al amanecer, más caliente al mediodía
+                if 6 <= hora <= 14:
+                    temperatura_hora = temp_base + (hora - 6) * 0.8  # Calentamiento
+                elif 14 < hora <= 20:
+                    temperatura_hora = temp_base + (20 - hora) * 0.4  # Enfriamiento gradual
+                else:
+                    temperatura_hora = temp_base - 2  # Noche más fresca
+                
+                # Añadir variación aleatoria pequeña
+                temperatura_hora += random.uniform(-0.5, 0.5)
+                temperatura_hora = max(18.0, min(35.0, temperatura_hora))
+                
+                # Calcular consumo total de todos los edificios
+                consumo_total = 0
+                for edif in edificios:
+                    consumo = edif.calcular_consumo(hora, temperatura_hora)
+                    consumo_total += consumo
+                
+                # Verificar blackout
+                en_blackout = consumo_total > capacidad_max
+                if en_blackout:
+                    resultado.blackouts += 1
+                
+                # Guardar dato histórico (una muestra cada hora)
+                resultado.historial_horas.append(consumo_total)
+                
+                # Guardar datos cada 6 horas para estadísticas
+                if hora % 6 == 0:
+                    resultado.historial_demanda.append((dia, hora, consumo_total, temperatura_hora))
+                
+                # Avanzar 1 hora en SimPy
+                yield env.timeout(1)
+    
+    # Ejecutar el proceso
+    env.process(proceso_simulacion())
+    env.run(until=365 * 24)
     
     return resultado
 
@@ -407,7 +419,7 @@ def get_color_subestacion(tipo: str) -> Tuple[int, int, int]:
 # TEST RÁPIDO
 # ============================================================
 if __name__ == "__main__":
-    print("🧪 Testeando motor lógico...")
+    print("Testeando motor lógico...")
     
     # Crear ciudad de prueba
     pygame.init()
