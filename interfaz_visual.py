@@ -94,7 +94,7 @@ class SimulacionUI:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Simulador de Demanda Energética - Profesional")
+        pygame.display.set_caption("Simulador de Demanda Energética- Profesional")
         self.clock = pygame.time.Clock()
         self.audio = SoundEngine()
         
@@ -332,17 +332,17 @@ class SimulacionUI:
         # Título en ESPAÑOL
         self.screen.blit(self.font_lg.render("SIMULADOR DE DEMANDA DE ENERGÍA", True, Palette.CYAN), (25, 25))
         
-        # Info Estado
+        # Info Estado (texto simple sin iconos)
         info = f"DÍA {self.dia} | {self.hora:02d}:{self.minuto:02d} | {self.temperatura:.1f}°C"
-        self.screen.blit(self.font_xl.render(info, True, Palette.AMBER), (25, 50))
+        self.screen.blit(self.font_xl.render(info, True, Palette.AMBER), (25, 48))
         
-        # Consumo Central
+        # Consumo Central con icono ⚡
         cx = SCREEN_WIDTH // 2 - 50
-        lbl = self.font_md.render("CONSUMO TOTAL", True, Palette.GRAY)
+        lbl = self.font_md.render(" CONSUMO TOTAL", True, Palette.GRAY)
         self.screen.blit(lbl, (cx, 20))
         
         col = Palette.NEON_RED if self.blackout else Palette.CYAN_GLOW
-        val = self.font_xl.render(f"{self.consumo_total:,} kW", True, col)
+        val = self.font_xl.render(f"  {self.consumo_total:,} kW", True, col)
         self.screen.blit(val, (cx, 40))
         
         # Botones Velocidad
@@ -355,6 +355,7 @@ class SimulacionUI:
             lbl = self.font_sl.render(b['lbl'], True, c_txt)
             tr = lbl.get_rect(center=b['rect'].center)
             self.screen.blit(lbl, tr)
+
 
     def draw_sidebar(self):
         r = SIDEBAR_RECT
@@ -501,6 +502,9 @@ class SimulacionUI:
         pygame.draw.line(self.screen, Palette.NEON_RED, (gx, cpy), (gx+gw, cpy), 2)
         self.screen.blit(self.font_sl.render(f"LÍMITE: {cap//1000} MW", True, Palette.NEON_RED), (gx+10, cpy-15))
 
+        # Leyenda fija para el gráfico (esquina derecha)
+        legend_x = gx + gw - 220
+
 
 
     def draw_modal(self):
@@ -605,6 +609,7 @@ class SimulacionUI:
             pt = self.font_sl.render(pct_text, True, Palette.WHITE)
             self.screen.blit(pt, (col_x + bar_width//2 - 20, bar_y + 2))
 
+
         # Resumen comparativo abajo
         summary_y = my + 380
         pygame.draw.line(self.screen, Palette.CYAN, (mx + 30, summary_y), (mx + mw - 30, summary_y), 1)
@@ -634,6 +639,55 @@ class SimulacionUI:
 
         for i, line in enumerate(summary_lines):
             self.screen.blit(self.font_sl.render(line, True, Palette.GRAY), (mx + 40, summary_y + 40 + i * 20))
+
+        # Gráfico de torta único: distribución del promedio de demanda entre subestaciones
+        try:
+            sizes = [float(r.get('promedio_demanda_kw', 0)) for r in res]
+            total = sum(sizes)
+            pie_size = 140
+            pie_surf = pygame.Surface((pie_size, pie_size), pygame.SRCALPHA)
+            cx_p = cy_p = pie_size // 2
+
+            if total > 0:
+                start_angle = -90.0
+                for idx, s in enumerate(sizes):
+                    pct = s / total
+                    end_angle = start_angle + pct * 360.0
+                    pts = [(cx_p, cy_p)]
+                    steps = max(6, int(abs(end_angle - start_angle) / 6))
+                    a = start_angle
+                    while a <= end_angle:
+                        rad = math.radians(a)
+                        x = cx_p + math.cos(rad) * (pie_size // 2)
+                        y = cy_p + math.sin(rad) * (pie_size // 2)
+                        pts.append((x, y))
+                        a += max(1.0, abs(end_angle - start_angle) / steps)
+                    color = SUBESTACIONES_CONFIG[res[idx]['tipo']]['color']
+                    pygame.draw.polygon(pie_surf, color, pts)
+                    start_angle = end_angle
+            else:
+                pygame.draw.circle(pie_surf, (80,80,80), (cx_p, cy_p), pie_size//2)
+
+            pygame.draw.circle(pie_surf, Palette.BG_PANEL, (cx_p, cy_p), pie_size//2, 2)
+
+            pie_x = mx + mw - pie_size - 40
+            pie_y = summary_y + 30
+            self.screen.blit(pie_surf, (pie_x, pie_y))
+
+            # Leyenda al lado del pie (colores = subestaciones)
+            lx = pie_x - 170
+            base_ly = pie_y
+            self.screen.blit(self.font_sl.render("Leyenda (colores = subestaciones):", True, Palette.CYAN), (lx, base_ly))
+            for idx, r_ in enumerate(res):
+                perc = 0.0 if total == 0 else (sizes[idx] / total) * 100.0
+                txt = f"{r_['tipo']}: {int(sizes[idx]):,} kW ({perc:.0f}%)"
+                y = base_ly + 18 + idx * 18
+                # Caja de color
+                col_box = SUBESTACIONES_CONFIG[r_['tipo']]['color']
+                pygame.draw.rect(self.screen, col_box, (lx, y, 12, 12), border_radius=3)
+                self.screen.blit(self.font_sl.render(txt, True, Palette.WHITE), (lx + 18, y))
+        except Exception:
+            pass
 
         # Botón cerrar
         close_btn_width, close_btn_height = 150, 35
