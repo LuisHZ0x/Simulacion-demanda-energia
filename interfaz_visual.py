@@ -108,7 +108,8 @@ class SimulacionUI:
         self.pausado = False
         
         # Entidades
-        self.edificios = generar_ciudad()
+        target_buildings = self.input_screen()
+        self.edificios = generar_ciudad(target_buildings)
         self.particulas = []
         
         # Datos
@@ -121,6 +122,7 @@ class SimulacionUI:
         self.modo_tormenta = False
         self.tormenta_timer = 0
         self.tormentas_count = 0
+        self.historial_fallos = {"Pequeña": 0, "Mediana": 0, "Grande": 0}
         
         # Gráfica (Historial más largo para ver mejor)
         self.history_len = 800 
@@ -142,6 +144,145 @@ class SimulacionUI:
         self.init_layout()
         self.modal_active = False
         self.modal_data = None
+        self.hovered_edificio = None
+
+    def check_hover(self):
+        """Detecta si el mouse está sobre un edificio"""
+        mx, my = pygame.mouse.get_pos()
+        self.hovered_edificio = None
+        
+        # Solo comprobar si no hay modales activos
+        if not self.modal_active:
+            for ed in self.edificios:
+                if ed.rect.collidepoint(mx, my):
+                    self.hovered_edificio = ed
+                    break
+
+    def draw_popup(self, edificio):
+        """Dibuja un popup con info del edificio"""
+        mx, my = pygame.mouse.get_pos()
+        
+        # Datos
+        tipo = edificio.tipo.title()
+        pob = f"{edificio.poblacion} personas"
+        cons = f"{edificio.consumo_actual:,.1f} kW"
+        
+        # Configurar colores según tipo
+        if edificio.tipo == "residencial":
+            border_col = Palette.RESIDENCIAL
+        elif edificio.tipo == "comercial":
+            border_col = Palette.COMERCIAL
+        else:
+            border_col = Palette.INDUSTRIAL
+            
+        # Textos
+        lines = [
+            (tipo, border_col),
+            (f"Población: {edificio.poblacion}", Palette.WHITE),
+            (f"Consumo: {edificio.consumo_actual:,.0f} kW", Palette.CYAN)
+        ]
+        
+        # Calcular tamaño caja
+        w, h = 180, 80
+        x, y = mx + 15, my + 15
+        
+        # Clamp a pantalla
+        if x + w > SCREEN_WIDTH: x = mx - w - 15
+        if y + h > SCREEN_HEIGHT: y = my - h - 15
+        
+        # Fondo
+        s = pygame.Surface((w, h), pygame.SRCALPHA)
+        s.fill((10, 15, 25, 230)) # Semi-transparente
+        self.screen.blit(s, (x, y))
+        
+        # Borde
+        pygame.draw.rect(self.screen, border_col, (x, y, w, h), 2)
+        
+        # Dibujar líneas
+        dy = y + 10
+        for txt, col in lines:
+            if lines.index((txt, col)) == 0: # Título
+                font = self.font_md
+            else:
+                font = self.font_sl
+                
+            surf = font.render(txt, True, col)
+            self.screen.blit(surf, (x + 10, dy))
+            dy += 22
+
+    def input_screen(self) -> int:
+        """Pantalla de entrada para la cantidad de edificios"""
+        input_text = "50"
+        active = True
+        font_input = pygame.font.SysFont("Arial", 48, bold=True)
+        font_title = pygame.font.SysFont("Arial", 32, bold=True)
+        font_instr = pygame.font.SysFont("Arial", 22, bold=True)
+        
+        while active:
+            self.screen.fill(Palette.BG_DARKEST)
+            
+            # Título
+            title = font_title.render("CONFIGURACIÓN DE SIMULACIÓN", True, Palette.CYAN)
+            tr = title.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 - 100))
+            self.screen.blit(title, tr)
+            
+            # Instrucción
+            instr = font_instr.render("Ingrese cantidad de edificios (10 - 400):", True, Palette.WHITE)
+            ir = instr.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 - 40))
+            self.screen.blit(instr, ir)
+            
+            # Caja de texto
+            box_rect = pygame.Rect(0, 0, 200, 60)
+            box_rect.center = (SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 30)
+            pygame.draw.rect(self.screen, Palette.BG_PANEL, box_rect, border_radius=8)
+            pygame.draw.rect(self.screen, Palette.CYAN, box_rect, 2, border_radius=8)
+            
+            # Texto ingresado
+            txt_surf = font_input.render(input_text, True, Palette.AMBER)
+            txt_rect = txt_surf.get_rect(center=box_rect.center)
+            self.screen.blit(txt_surf, txt_rect)
+            
+            # Botón Continuar
+            btn_rect = pygame.Rect(0, 0, 200, 50)
+            btn_rect.center = (SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 120)
+            pygame.draw.rect(self.screen, Palette.NEON_GREEN, btn_rect, border_radius=8)
+            
+            btn_txt = font_instr.render("INICIAR", True, (0,0,0))
+            btr = btn_txt.get_rect(center=btn_rect.center)
+            self.screen.blit(btn_txt, btr)
+            
+            pygame.display.flip()
+            
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    exit()
+                
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if btn_rect.collidepoint(event.pos):
+                        try:
+                            val = int(input_text)
+                            if 10 <= val <= 400:
+                                return val
+                        except:
+                            pass
+                            
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN:
+                        try:
+                            val = int(input_text)
+                            if 10 <= val <= 400:
+                                return val
+                        except:
+                            pass
+                    elif event.key == pygame.K_BACKSPACE:
+                        input_text = input_text[:-1]
+                    else:
+                        if event.unicode.isdigit() and len(input_text) < 3:
+                            input_text += event.unicode
+            
+            self.clock.tick(30)
+        return 50
 
     def init_layout(self):
         sx, sy = SIDEBAR_RECT[0], SIDEBAR_RECT[1]
@@ -218,17 +359,36 @@ class SimulacionUI:
         
         # Loading simple
         self.screen.fill(Palette.BG_DARKEST)
-        t = self.font_lg.render("CALCULANDO EFICIENCIA ANUAL...", True, Palette.CYAN)
+        t = self.font_lg.render("PROYECTANDO CIERRE DE AÑO...", True, Palette.CYAN)
         tr = t.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2))
         self.screen.blit(t, tr)
         pygame.display.flip()
         
-        best, res = encontrar_mejor_subestacion(self.edificios)
-        self.modal_data = (best, res, subestacion_actual)  # Incluir subestación actual
+        # Calcular probabilidad de tormenta (Eventos por hora)
+        # Si hubo 5 tormentas en 10 días (240 horas) -> prob = 5/240
+        horas_pasadas = max(1, (self.dia * 24) + self.hora)
+        prob_tormenta = self.tormentas_count / horas_pasadas
+        
+        # Forzar un mínimo si el usuario ha sido activo
+        if self.tormentas_count > 0:
+            prob_tormenta = max(prob_tormenta, 0.001) 
+
+        best, res = encontrar_mejor_subestacion(
+            self.edificios, 
+            dia_actual=self.dia, 
+            hora_actual=self.hora, 
+            historial_fallos=self.historial_fallos,
+            prob_tormenta=prob_tormenta
+        )
+        
+        self.modal_data = (best, res, subestacion_actual)
         self.modal_active = True
+        # NO cambiamos automáticamente, el usuario debe decidir (o mantenemos la lógica anterior)
+        # La lógica anterior cambiaba automáticamente:
         self.sub_actual = best
 
     def update(self):
+        self.check_hover()
         if not self.pausado:
             # Tiempo
             steps = 1
@@ -270,8 +430,12 @@ class SimulacionUI:
         self.blackout = self.consumo_total > cap
         
         # Contar blackouts acumulativos (solo cuando inicia)
+        # Contar blackouts acumulativos (solo cuando inicia)
         if self.blackout and not self.blackout_prev:
             self.blackouts_session += 1
+            # Registrar al culpable
+            self.historial_fallos[self.sub_actual] += 1
+            
         self.blackout_prev = self.blackout
         
         if self.blackout and random.random() < 0.02:
@@ -318,6 +482,9 @@ class SimulacionUI:
         self.draw_graph()
         self.draw_particles()
         # Legend moved to sidebar
+        
+        if self.hovered_edificio:
+            self.draw_popup(self.hovered_edificio)
         
         if self.modal_active:
             self.draw_modal()
@@ -582,10 +749,10 @@ class SimulacionUI:
                 blackouts = blackouts_total
             
             stats = [
-                f"Costo: ${costo:,.0f}",
-                f"Blackouts: {blackouts}h",
-                f"Confiabilidad: {confiabilidad:.1f}%",
-                f"Eficiencia: {eficiencia:.1f}%"
+                f"Costo Ajustado: ${r['costo_ajustado']:,.0f}",
+                f"Inv+Op: ${r['costo_total']:,.0f}",
+                f"Fallos: {r['fallos_pasados']}h (Pas) + {r['blackouts_futuros']}h (Fut)",
+                f"Confiabilidad Real: {r['confiabilidad_real']:.1f}%",
             ]
 
             for stat in stats:
@@ -596,7 +763,7 @@ class SimulacionUI:
             bar_y = stats_y + 15
             bar_width = 180
             bar_height = 26
-            conf_pct = confiabilidad / 100
+            conf_pct = r['confiabilidad_real'] / 100
 
             # Background bar
             pygame.draw.rect(self.screen, (40,40,50), (col_x, bar_y, bar_width, bar_height), border_radius=8)
@@ -605,7 +772,7 @@ class SimulacionUI:
             pygame.draw.rect(self.screen, fill_color, (col_x, bar_y, int(bar_width * conf_pct), bar_height), border_radius=8)
 
             # Percentage text
-            pct_text = f"{confiabilidad:.1f}%"
+            pct_text = f"{r['confiabilidad_real']:.1f}%"
             pt = self.font_sl.render(pct_text, True, Palette.WHITE)
             self.screen.blit(pt, (col_x + bar_width//2 - 20, bar_y + 2))
 

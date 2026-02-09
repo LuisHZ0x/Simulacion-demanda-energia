@@ -26,8 +26,8 @@ SUBESTACIONES = {
         "nombre": "Subestación Estándar"
     },
     "Grande": {
-        "capacidad_kw": 220000,      # 220 MW
-        "capacidad_mw": 220,
+        "capacidad_kw": 300000,      # 220 MW
+        "capacidad_mw": 300,
         "costo_inversion": 250000,   # $250k instalación
         "costo_operativo_hora": 50,  # $50/hora operar
         "color": (232, 121, 249),    # Magenta
@@ -182,49 +182,71 @@ class Edificio:
 # ============================================================
 # GENERADOR DE CIUDAD
 # ============================================================
-def generar_ciudad() -> List[Edificio]:
-    """Genera la matriz de edificios ajustada al GRID_RECT"""
+def generar_ciudad(target_edificios: int = 50) -> List[Edificio]:
+    """Genera la matriz de edificios ajustada al GRID_RECT y la cantidad solicitada"""
     edificios = []
     tipos = ["residencial", "comercial", "industrial"]
     pesos = [0.5, 0.3, 0.2]
     
-    from config import GRID_RECT, GRID_FILAS, GRID_COLUMNAS, GRID_MARGIN_X, GRID_MARGIN_Y
+    from config import GRID_RECT, GRID_MARGIN_X, GRID_MARGIN_Y
     
     # Área disponible para el grid
     start_x = GRID_RECT[0] + GRID_MARGIN_X
     start_y = GRID_RECT[1] + GRID_MARGIN_Y
     available_w = GRID_RECT[2] - (2 * GRID_MARGIN_X)
     available_h = GRID_RECT[3] - (2 * GRID_MARGIN_Y)
+
+    # Calcular filas y columnas basándonos en el aspecto del área y la cantidad deseada
+    aspect_ratio = available_w / available_h
     
+    # cols * filas = target
+    # cols / filas = aspect_ratio  => cols = filas * aspect_ratio
+    # (filas * aspect_ratio) * filas = target => filas^2 = target / aspect_ratio
+    
+    calc_filas = math.sqrt(target_edificios / aspect_ratio)
+    rows = max(2, round(calc_filas))
+    cols = max(2, round(target_edificios / rows))
+    
+    # Recalcular para asegurar que cubrimos el target (puede sobrar un poco)
+    while rows * cols < target_edificios:
+        if cols / rows < aspect_ratio:
+            cols += 1
+        else:
+            rows += 1
+
     # Tamaño de celda
-    cell_w = available_w // GRID_COLUMNAS
-    cell_h = available_h // GRID_FILAS
+    cell_w = available_w // cols
+    cell_h = available_h // rows
     
     # Margen entre edificios
-    gap = 20
+    gap = max(5, int(min(cell_w, cell_h) * 0.15)) # Gap dinámico
     edificio_w = cell_w - gap
     edificio_h = cell_h - gap
 
     contador_industrias = 0
-    limite_industrias = (GRID_FILAS * GRID_COLUMNAS) // 8  # Máximo 12.5% industriales
+    limite_industrias = (rows * cols) // 8  # Máximo 12.5% industriales
     
-    for fil in range(GRID_FILAS):
-        for col in range(GRID_COLUMNAS):
+    count = 0
+    for fil in range(rows):
+        for col in range(cols):
+            if count >= target_edificios: break
+            
             x = start_x + (col * cell_w) + (gap // 2)
             y = start_y + (fil * cell_h) + (gap // 2)
 
             # Elegimos un tipo al azar
             tipo = random.choices(tipos, weights=pesos)[0]
 
-           # CONDICIONAL: Si salió industrial pero ya hay 6, lo cambiamos a residencial
+           # CONDICIONAL: Si salió industrial pero ya hay muchas, lo cambiamos
             if tipo == "industrial":
                 if contador_industrias < limite_industrias:
                     contador_industrias += 1
                 else:
-                    # Si ya llegamos al límite, forzamos que sea residencial (o comercial)
                     tipo = "residencial"
+            
             edif = Edificio(x, y, edificio_w, edificio_h, tipo)
             edificios.append(edif)
+            count += 1
     
     return edificios
 
@@ -274,105 +296,159 @@ class ResultadoAnual:
             "capacidad_mw": self.datos["capacidad_mw"]
         }
 
-def simular_año(tipo_subestacion: str, edificios: List[Edificio]) -> ResultadoAnual:
+def simular_anio(tipo_subestacion: str, edificios: List[Edificio], 
+                 dia_inicio: int = 0, hora_inicio: int = 0, 
+                 probabilidad_tormenta: float = 0.0) -> ResultadoAnual:
     """
-    Simula 1 año completo (365 días × 24 horas) con una subestación específica usando SimPy.
+    Simula desde el momento actual hasta fin de año (365 días).
+    Incluye probabilidad de tormentas.
     """
     resultado = ResultadoAnual(tipo_subestacion)
     capacidad_max = resultado.datos["capacidad_kw"]
     
-    print(f"Simulando año con Subestación {tipo_subestacion}...")
+    print(f"Simulando {tipo_subestacion} desde Día {dia_inicio}...")
     
-    # Crear entorno de SimPy
     env = simpy.Environment()
     
-    # Proceso de simulación
+    # Límite duro de tormentas anuales (60 máx)
+    MAX_TORMENTAS = 60
+    tormentas_generadas = 0
+    
     def proceso_simulacion():
-        for dia in range(365):
-            # Temperatura diaria con variación estacional y aleatoria
-            # Simulación de estaciones: días 0-90 verano, 91-180 otoño, 181-270 invierno, 271-364 primavera
-            if dia < 90:  # Verano
+        nonlocal tormentas_generadas
+        horas_totales = (365 * 24) - (dia_inicio * 24 + hora_inicio)
+        
+        # Iterar hora por hora desde el momento actual
+        tiempo_actual = dia_inicio * 24 + hora_inicio
+        
+        # Estado de tormenta
+        tiempo_tormenta_restante = 0
+        
+        for _ in range(int(horas_totales)):
+            dia_actual = tiempo_actual // 24
+            hora_dia = tiempo_actual % 24
+            
+            # --- CLIMA ---
+            # (Lógica de estaciones igual que antes)
+            if dia_actual < 90:  # Verano
                 temp_base = random.uniform(28, 35)
-            elif dia < 180:  # Otoño
+            elif dia_actual < 180:  # Otoño
                 temp_base = random.uniform(22, 28)
-            elif dia < 270:  # Invierno
+            elif dia_actual < 270:  # Invierno
                 temp_base = random.uniform(18, 25)
             else:  # Primavera
                 temp_base = random.uniform(20, 30)
             
-            # Variación horaria de temperatura
-            for hora in range(24):
-                # Variación diaria de temperatura: más fresco al amanecer, más caliente al mediodía
-                if 6 <= hora <= 14:
-                    temperatura_hora = temp_base + (hora - 6) * 0.8  # Calentamiento
-                elif 14 < hora <= 20:
-                    temperatura_hora = temp_base + (20 - hora) * 0.4  # Enfriamiento gradual
-                else:
-                    temperatura_hora = temp_base - 2  # Noche más fresca
-                
-                # Añadir variación aleatoria pequeña
-                temperatura_hora += random.uniform(-0.5, 0.5)
-                temperatura_hora = max(18.0, min(35.0, temperatura_hora))
-                
-                # Calcular consumo total de todos los edificios
-                consumo_total = 0
-                for edif in edificios:
-                    consumo = edif.calcular_consumo(hora, temperatura_hora)
-                    consumo_total += consumo
-                
-                # Verificar blackout
-                en_blackout = consumo_total > capacidad_max
-                if en_blackout:
-                    resultado.blackouts += 1
-                
-                # Guardar dato histórico (una muestra cada hora)
-                resultado.historial_horas.append(consumo_total)
-                
-                # Guardar datos cada 6 horas para estadísticas
-                if hora % 6 == 0:
-                    resultado.historial_demanda.append((dia, hora, consumo_total, temperatura_hora))
-                
-                # Avanzar 1 hora en SimPy
-                yield env.timeout(1)
+            # Variación horaria
+            if 6 <= hora_dia <= 14:
+                temperatura_hora = temp_base + (hora_dia - 6) * 0.8
+            elif 14 < hora_dia <= 20:
+                temperatura_hora = temp_base + (20 - hora_dia) * 0.4
+            else:
+                temperatura_hora = temp_base - 2
+            
+            temperatura_hora += random.uniform(-0.5, 0.5)
+            temperatura_hora = max(18.0, min(35.0, temperatura_hora))
+            
+            # --- TORMENTAS ---
+            # Decidir si inicia tormenta (solo si no hay una activa y no pasamos el límite)
+            factor_tormenta = 1.0
+            if tiempo_tormenta_restante > 0:
+                tiempo_tormenta_restante -= 1
+                factor_tormenta = random.uniform(1.5, 2.5) # Caos
+            else:
+                # Probabilidad por hora de iniciar tormenta
+                if tormentas_generadas < MAX_TORMENTAS and random.random() < probabilidad_tormenta:
+                    tiempo_tormenta_restante = random.randint(2, 6) # Dura 2-6 horas
+                    tormentas_generadas += 1
+            
+            # --- CONSUMO ---
+            consumo_total = 0
+            for edif in edificios:
+                consumo = edif.calcular_consumo(hora_dia, temperatura_hora)
+                consumo_total += consumo
+            
+            # Aplicar Tormenta
+            consumo_total *= factor_tormenta
+            
+            # Verificar blackout
+            if consumo_total > capacidad_max:
+                resultado.blackouts += 1
+            
+            # Guardar datos
+            resultado.historial_horas.append(consumo_total)
+            if hora_dia % 6 == 0:
+                resultado.historial_demanda.append((dia_actual, hora_dia, consumo_total, temperatura_hora))
+            
+            tiempo_actual += 1
+            yield env.timeout(1)
     
-    # Ejecutar el proceso
     env.process(proceso_simulacion())
-    env.run(until=365 * 24)
+    env.run()
     
     return resultado
 
 # ============================================================
 # OPTIMIZADOR
 # ============================================================
-def encontrar_mejor_subestacion(edificios: List[Edificio]) -> Tuple[str, List[Dict]]:
+def encontrar_mejor_subestacion(edificios: List[Edificio], 
+                                dia_actual: int = 0, 
+                                hora_actual: int = 0,
+                                historial_fallos: Dict[str, int] = None,
+                                prob_tormenta: float = 0.0) -> Tuple[str, List[Dict]]:
     """
-    Corre las 3 simulaciones y determina la óptima.
+    Determina la óptima considerando:
+    1. Costo Inversión + Operativo
+    2. Penalización por Blackouts (evita buscar perfección si es muy cara)
+    3. Historial de fallos REALES ya ocurridos
     """
+    if historial_fallos is None:
+        historial_fallos = {"Pequeña": 0, "Mediana": 0, "Grande": 0}
+
     resultados = []
+    COSTO_HORA_BLACKOUT = 500  # Penalización económica por hora sin luz
     
-    print("🏆 Iniciando comparación de subestaciones...")
+    print(f"🏆 Iniciando comparación (Día {dia_actual}, Prob Tormenta: {prob_tormenta:.4f})...")
     
     for tipo in ["Pequeña", "Mediana", "Grande"]:
-        res = simular_año(tipo, edificios)
+        # Simular futuro
+        res = simular_anio(tipo, edificios, dia_actual, hora_actual, prob_tormenta)
+        
+        # Combinar con pasado real
+        fallos_pasados = historial_fallos.get(tipo, 0)
+        fallos_totales = fallos_pasados + res.blackouts
+        
+        # Calcular métricas base
         metricas = res.calcular_metricas()
+        
+        # --- CÁLCULO DE COSTO AJUSTADO ---
+        # Costo Real = Inversión + Operativo + (Multas por Blackout)
+        costo_multas = fallos_totales * COSTO_HORA_BLACKOUT
+        costo_ajustado = metricas["costo_total"] + costo_multas
+        
+        # Actualizar métricas con datos combinados
+        metricas["blackouts_totales"] = fallos_totales
+        metricas["blackouts_futuros"] = res.blackouts
+        metricas["fallos_pasados"] = fallos_pasados
+        metricas["costo_ajustado"] = costo_ajustado
+        metricas["confiabilidad_real"] = max(0, 100 * (1 - (fallos_totales / (365*24))))
+        
         resultados.append(metricas)
-        print(f"{tipo}: ${metricas['costo_total']:,.0f} | "
-              f"Blackouts: {metricas['blackouts']}h | "
-              f"Eficiencia: {metricas['eficiencia']:.1f}%")
+        print(f"{tipo}: ${metricas['costo_total']:,.0f} + ${costo_multas:,.0f} (Multas) = ${costo_ajustado:,.0f}")
+
+    # Criterio: Menor COSTO AJUSTADO
+    # Pero con una restricción mínima de seguridad (95% confiabilidad)
+    # 5% de 8760h = ~438 horas. Si falla más de eso, es inaceptable.
     
-    # Criterio: 0 blackouts y menor costo
-    candidatos_validos = [r for r in resultados if r["blackouts"] == 0]
+    candidatos_viables = [r for r in resultados if r["confiabilidad_real"] > 95.0]
     
-    if candidatos_validos:
-        # Entre las que no fallan, elegir la más barata
-        ganadora = min(candidatos_validos, key=lambda x: x["costo_total"])
+    if candidatos_viables:
+        ganadora = min(candidatos_viables, key=lambda x: x["costo_ajustado"])
     else:
-        # Si todas tienen blackouts, elegir la que menos falló
-        ganadora = min(resultados, key=lambda x: x["blackouts"])
+        # Si todas son desastrosas, elegir la menos mala (mayor confiabilidad)
+        ganadora = max(resultados, key=lambda x: x["confiabilidad_real"])
     
     print(f"\n ÓPTIMA ELEGIDA: {ganadora['tipo']}")
-    print(f"   Costo: ${ganadora['costo_total']:,.0f}")
-    print(f"   Confiabilidad: {ganadora['confiabilidad']:.1f}%")
     
     return ganadora["tipo"], resultados
 
