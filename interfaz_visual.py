@@ -241,7 +241,7 @@ class SimulacionUI:
             self.screen.blit(title, tr)
             
             # Instrucción
-            instr = font_instr.render("Ingrese cantidad de edificios (10 - 400):", True, Palette.WHITE)
+            instr = font_instr.render("Ingrese cantidad de edificios (10 - 500):", True, Palette.WHITE)
             ir = instr.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 - 40))
             self.screen.blit(instr, ir)
 
@@ -280,7 +280,7 @@ class SimulacionUI:
                     if btn_rect.collidepoint(event.pos):
                         try:
                             val = int(input_text)
-                            if 10 <= val <= 400:
+                            if 10 <= val <= 500:
                                 return val
                         except:
                             pass
@@ -289,7 +289,7 @@ class SimulacionUI:
                     if event.key == pygame.K_RETURN:
                         try:
                             val = int(input_text)
-                            if 10 <= val <= 400:
+                            if 10 <= val <= 500:
                                 return val
                         except:
                             pass
@@ -336,7 +336,7 @@ class SimulacionUI:
                 if self.modal_active:
                     # Detectar clic en el botón cerrar
                     close_btn_width, close_btn_height = 150, 35
-                    close_btn_x = (SCREEN_WIDTH - close_btn_width) // 2
+                    close_btn_x = (SCREEN_WIDTH - close_btn_width) // 1.66
                     close_btn_y = (SCREEN_HEIGHT - 600)//2 + 600 - 50  # my + mh - 50
                     
                     close_rect = pygame.Rect(close_btn_x, close_btn_y, close_btn_width, close_btn_height)
