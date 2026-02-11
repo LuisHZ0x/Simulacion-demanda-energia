@@ -932,7 +932,6 @@ class SimulacionUI:
         if not self.modal_active or not self.modal_data:
             return
         win, res, current_sub = self.modal_data
-
         # Nombre y ruta de salida (Escritorio del usuario)
         fname = f"reporte_simulacion_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         out_dir = os.path.join(os.path.expanduser("~"), "Escritorio")
@@ -946,14 +945,11 @@ class SimulacionUI:
                 with open(txt_path, 'w', encoding='utf-8') as f:
                     f.write("REPORTE DE SIMULACIÓN\n")
                     f.write(f"Fecha: {datetime.datetime.now()}\n")
-
-                    # Incluir total de edificios si está disponible
                     try:
                         total_ed = SimulationState.get_total_buildings()
                         f.write(f"Total edificios en simulación: {total_ed}\n")
                     except Exception:
                         pass
-
                     f.write(f"Subestación recomendada: {win}\n")
                     f.write(f"Subestación actual: {current_sub}\n\n")
                     for r in res:
@@ -965,59 +961,68 @@ class SimulacionUI:
             except Exception:
                 pass
             return
-         
+
         try:
             c = canvas.Canvas(path, pagesize=A4)
             w_page, h_page = A4
-            margin = 40
-            y = h_page - margin
+            margin = 50
 
-            c.setFont("Helvetica-Bold", 18)
-            c.drawString(margin, y, "REPORTE DE SIMULACIÓN - DEMANDA ENERGÉTICA")
-            y -= 30
+            # Título simple
+            c.setFont("Helvetica-Bold", 20)
+            c.drawCentredString(w_page/2, h_page - margin, "REPORTE DE SIMULACIÓN - DEMANDA ENERGÉTICA")
+            c.setFont("Helvetica", 9)
+            c.drawCentredString(w_page/2, h_page - margin - 18, datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+            y = h_page - margin - 48
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(margin, y, f"Subestación recomendada: {win}")
             c.setFont("Helvetica", 10)
-            c.drawString(margin, y, f"Generado: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            y -= 20
-            c.drawString(margin, y, f"Subestación recomendada: {win}    |    Subestación actual: {current_sub}")
-            y -= 20
+            c.drawString(margin, y - 16, f"Subestación actual: {current_sub}")
+            try:
+                total_ed = SimulationState.get_total_buildings()
+                c.drawString(margin, y - 32, f"Total edificios en simulación: {total_ed}")
+            except Exception:
+                pass
 
-            total_ed = SimulationState.get_total_buildings()
-            c.drawString(margin, y, f"Total edificios en simulación: {total_ed}")
-            y -= 30
-        
+            # Espacio antes de la tabla
+            y -= 64
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(margin, y, "Tipo")
+            c.drawString(margin + 130, y, "Capacidad (MW)")
+            c.drawRightString(w_page - margin - 150, y, "Costo total (USD)")
+            c.drawRightString(w_page - margin, y, "Blackouts (h)")
+            y -= 14
+            c.setFont("Helvetica", 10)
 
             for r in res:
-                if y < 120:
+                if y < margin + 40:
                     c.showPage()
                     y = h_page - margin
-                c.setFont("Helvetica-Bold", 12)
-                c.drawString(margin, y, f"{r['tipo']} ({r.get('capacidad_mw', '')} MW)")
-                y -= 18
-                c.setFont("Helvetica", 10)
-                lines = [
-                    f"Costo Ajustado: ${r.get('costo_ajustado', 0):,.0f}",
-                    f"Inversión+Operación: ${r.get('costo_total', 0):,.0f}",
-                    f"Fallos pasados: {r.get('fallos_pasados', 0)} h",
-                    f"Blackouts futuros: {r.get('blackouts_futuros', 0)} h",
-                    f"Blackouts simulados: {r.get('blackouts', 0)} h",
-                    f"Confiabilidad real: {r.get('confiabilidad_real', 0):.1f}%",
-                    f"Promedio demanda (kW): {r.get('promedio_demanda_kw', 0):,.0f}"
-                ]
-                for ln in lines:
-                    c.drawString(margin + 10, y, ln)
-                    y -= 14
-                y -= 8
+                c.drawString(margin, y, str(r.get('tipo', '')))
+                c.drawString(margin + 130, y, str(r.get('capacidad_mw', '')))
+                c.drawRightString(w_page - margin - 150, y, f"${r.get('costo_total', 0):,.0f}")
+                c.drawRightString(w_page - margin, y, str(r.get('blackouts', 0)))
+                y -= 16
 
             # Resumen final
-            if y < 120:
-                c.showPage()
-                y = h_page - margin
+            if y < margin + 80:
+                c.showPage(); y = h_page - margin
             y -= 10
             c.setFont("Helvetica-Bold", 12)
             c.drawString(margin, y, "RESUMEN DE SESIÓN")
             y -= 18
             c.setFont("Helvetica", 10)
             c.drawString(margin, y, f"Tormentas simuladas: {self.tormentas_count}")
+            y -= 14
+            c.drawString(margin, y, f"Blackouts en sesión: {self.blackouts_session}")
+            y -= 14
+            c.drawString(margin, y, f"Día/hora actual: DÍA {self.dia} | {self.hora:02d}:{self.minuto:02d}")
+
+            c.showPage()
+            c.save()
+        except Exception:
+            # No romper la UI si falla el guardado
+            pass
             y -= 14
             c.drawString(margin, y, f"Blackouts en sesión: {self.blackouts_session}")
             y -= 14
