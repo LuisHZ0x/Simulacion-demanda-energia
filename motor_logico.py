@@ -47,7 +47,7 @@ class Edificio:
         
         # Población aleatoria según tipo (rango 100-2000)
         if self.tipo == "residencial":
-            self.poblacion = random.randint(100, 800)
+            self.poblacion = random.randint(2, 10)
             self.color_base = (96, 165, 250)    # Azul neón base
             self.color_brillo = (59, 130, 246)  # Azul brillante
             self.hora_pico = 20  # 8 PM
@@ -55,7 +55,7 @@ class Edificio:
             self.forma = "casa"
             
         elif self.tipo == "comercial":
-            self.poblacion = random.randint(200, 1200)
+            self.poblacion = random.randint(50, 300)
             self.color_base = (74, 222, 128)    # Verde neón base
             self.color_brillo = (34, 197, 94)   # Verde brillante
             self.hora_pico = 13  # 1 PM
@@ -63,7 +63,7 @@ class Edificio:
             self.forma = "oficina"
             
         else:  # industrial
-            self.poblacion = random.randint(50, 400)
+            self.poblacion = random.randint(50, 500)
             self.color_base = (248, 113, 113)   # Rojo neón base
             self.color_brillo = (239, 68, 68)   # Rojo brillante
             self.hora_pico = 10  # 10 AM

@@ -1,11 +1,19 @@
 import pygame
 import random
 import math
+import datetime, os
 from collections import deque
 from config import (Palette, SimConfig, SUBESTACIONES_CONFIG, SCREEN_WIDTH, SCREEN_HEIGHT, FPS, 
                    HEADER_RECT, SIDEBAR_RECT, GRAPH_RECT, GRID_RECT,
                    HEADER_HEIGHT, SIDEBAR_WIDTH, GRID_HEIGHT, GRAPH_HEIGHT)
 from motor_logico import generar_ciudad, obtener_datos_snapshot, encontrar_mejor_subestacion, Edificio
+from simulation_state import SimulationState
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    REPORTLAB_AVAILABLE = True
+except Exception:
+    REPORTLAB_AVAILABLE = False
 
 # ============================================================
 # MOTOR DE AUDIO SUAVE (SINE WAVES)
@@ -60,6 +68,10 @@ class SoundEngine:
             sound.play()
         except: pass
 
+
+class BuildConfig:
+    name = 4
+
 # ============================================================
 # PARTICULAS DE HUMO
 # ============================================================
@@ -109,6 +121,8 @@ class SimulacionUI:
         
         # Entidades
         target_buildings = self.input_screen()
+        # Guardar el total de edificios en la clase compartida para uso posterior
+        SimulationState.set_total_buildings(target_buildings)
         self.edificios = generar_ciudad(target_buildings)
         self.particulas = []
         
@@ -230,6 +244,10 @@ class SimulacionUI:
             instr = font_instr.render("Ingrese cantidad de edificios (10 - 400):", True, Palette.WHITE)
             ir = instr.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 - 40))
             self.screen.blit(instr, ir)
+
+
+
+            
             
             # Caja de texto
             box_rect = pygame.Rect(0, 0, 200, 60)
@@ -322,11 +340,22 @@ class SimulacionUI:
                     close_btn_y = (SCREEN_HEIGHT - 600)//2 + 600 - 50  # my + mh - 50
                     
                     close_rect = pygame.Rect(close_btn_x, close_btn_y, close_btn_width, close_btn_height)
+                    # Botón Guardar reporte (a la izquierda del Cerrar)
+                    report_btn_width, report_btn_height = 170, 35
+                    report_btn_x = close_btn_x - 190
+                    report_btn_y = close_btn_y
+                    report_rect = pygame.Rect(report_btn_x, report_btn_y, report_btn_width, report_btn_height)
+                    
                     if close_rect.collidepoint(mx, my):
                         self.modal_active = False
                         self.audio.play_click()
                         return True
-                    return True  # Si se hace clic fuera del botón, no cerrar
+                    if report_rect.collidepoint(mx, my):
+                        # Generar PDF con los datos mostrados en el modal
+                        self.generate_pdf_report()
+                        self.audio.play_click()
+                        return True
+                    return True # Si se hace clic fuera del botón, no cerrar
                 
                 # Velocidad
                 for b in self.btn_speeds:
@@ -856,15 +885,151 @@ class SimulacionUI:
         except Exception:
             pass
 
-        # Botón cerrar
-        close_btn_width, close_btn_height = 150, 35
-        close_btn_x = (SCREEN_WIDTH - close_btn_width) // 2
-        close_btn_y = my + mh - 50
+        # Dimensiones fijas de los botones
+        bw, bh = 170, 40
+    
+    # CALCULAMOS LA POSICIÓN UNA SOLA VEZ
+    # Centramos los botones en la parte inferior del modal
+        btn_y = my + mh - 60
+    
+    # Creamos los Rects definitivos
+        self.report_btn_rect = pygame.Rect(SCREEN_WIDTH//2 - 190, btn_y, bw, bh)
+        self.close_btn_rect = pygame.Rect(SCREEN_WIDTH//2 + 20, btn_y, bw, bh)
 
-        pygame.draw.rect(self.screen, Palette.NEON_GREEN, (close_btn_x, close_btn_y, close_btn_width, close_btn_height), border_radius=6)
+    # --- DIBUJO DEL BOTÓN REPORTE ---
+    # Detectamos el mouse para el efecto visual (opcional)
+        m_pos = pygame.mouse.get_pos()
+        color_rep = (150, 255, 150) if self.report_btn_rect.collidepoint(m_pos) else Palette.NEON_GREEN
+    
+        pygame.draw.rect(self.screen, color_rep, self.report_btn_rect, border_radius=6)
+        rep_text = self.font_md.render("REPORTE", True, (0,0,0))
+    # Centramos el texto exactamente en el centro del RECT del botón
+        self.screen.blit(rep_text, rep_text.get_rect(center=self.report_btn_rect.center))
+
+    # --- DIBUJO DEL BOTÓN CERRAR ---
+        color_close = (150, 255, 150) if self.close_btn_rect.collidepoint(m_pos) else Palette.NEON_GREEN
+    
+        pygame.draw.rect(self.screen, color_close, self.close_btn_rect, border_radius=6)
         close_text = self.font_md.render("CERRAR", True, (0,0,0))
-        ct_rect = close_text.get_rect(center=(close_btn_x + close_btn_width//2, close_btn_y + close_btn_height//2))
-        self.screen.blit(close_text, ct_rect)
+        self.screen.blit(close_text, close_text.get_rect(center=self.close_btn_rect.center))
+
+    def handle_modal_events(self, event):
+        # En tu manejador de eventos
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1: # Clic izquierdo
+            # Ahora el área de clic es IDÉNTICA al área verde dibujada
+                if self.report_btn_rect.collidepoint(event.pos):
+                    print("Acción: Guardar Reporte")
+                    self.guardar_reporte()
+            
+                if self.close_btn_rect.collidepoint(event.pos):
+                    print("Acción: Cerrar Modal")
+                    self.show_modal = False
+
+
+    def generate_pdf_report(self):
+        """Genera un PDF con los datos que se muestran en el modal."""
+        if not self.modal_active or not self.modal_data:
+            return
+        win, res, current_sub = self.modal_data
+
+        # Nombre y ruta de salida (Escritorio del usuario)
+        fname = f"reporte_simulacion_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        out_dir = os.path.join(os.path.expanduser("~"), "Escritorio")
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, fname)
+
+        if not REPORTLAB_AVAILABLE:
+            # Fallback simple: guardar texto si reportlab no está disponible
+            txt_path = path.replace('.pdf', '.txt')
+            try:
+                with open(txt_path, 'w', encoding='utf-8') as f:
+                    f.write("REPORTE DE SIMULACIÓN\n")
+                    f.write(f"Fecha: {datetime.datetime.now()}\n")
+
+                    # Incluir total de edificios si está disponible
+                    try:
+                        total_ed = SimulationState.get_total_buildings()
+                        f.write(f"Total edificios en simulación: {total_ed}\n")
+                    except Exception:
+                        pass
+
+                    f.write(f"Subestación recomendada: {win}\n")
+                    f.write(f"Subestación actual: {current_sub}\n\n")
+                    for r in res:
+                        f.write(f"--- {r['tipo']} ---\n")
+                        f.write(f"Capacidad (MW): {r.get('capacidad_mw', '')}\n")
+                        f.write(f"Costo total: ${r.get('costo_total', 0):,.0f}\n")
+                        f.write(f"Blackouts: {r.get('blackouts', 0)}\n")
+                        f.write(f"Confiabilidad: {r.get('confiabilidad_real', 0):.1f}%\n\n")
+            except Exception:
+                pass
+            return
+         
+        try:
+            c = canvas.Canvas(path, pagesize=A4)
+            w_page, h_page = A4
+            margin = 40
+            y = h_page - margin
+
+            c.setFont("Helvetica-Bold", 18)
+            c.drawString(margin, y, "REPORTE DE SIMULACIÓN - DEMANDA ENERGÉTICA")
+            y -= 30
+            c.setFont("Helvetica", 10)
+            c.drawString(margin, y, f"Generado: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            y -= 20
+            c.drawString(margin, y, f"Subestación recomendada: {win}    |    Subestación actual: {current_sub}")
+            y -= 20
+
+            total_ed = SimulationState.get_total_buildings()
+            c.drawString(margin, y, f"Total edificios en simulación: {total_ed}")
+            y -= 30
+        
+
+            for r in res:
+                if y < 120:
+                    c.showPage()
+                    y = h_page - margin
+                c.setFont("Helvetica-Bold", 12)
+                c.drawString(margin, y, f"{r['tipo']} ({r.get('capacidad_mw', '')} MW)")
+                y -= 18
+                c.setFont("Helvetica", 10)
+                lines = [
+                    f"Costo Ajustado: ${r.get('costo_ajustado', 0):,.0f}",
+                    f"Inversión+Operación: ${r.get('costo_total', 0):,.0f}",
+                    f"Fallos pasados: {r.get('fallos_pasados', 0)} h",
+                    f"Blackouts futuros: {r.get('blackouts_futuros', 0)} h",
+                    f"Blackouts simulados: {r.get('blackouts', 0)} h",
+                    f"Confiabilidad real: {r.get('confiabilidad_real', 0):.1f}%",
+                    f"Promedio demanda (kW): {r.get('promedio_demanda_kw', 0):,.0f}"
+                ]
+                for ln in lines:
+                    c.drawString(margin + 10, y, ln)
+                    y -= 14
+                y -= 8
+
+            # Resumen final
+            if y < 120:
+                c.showPage()
+                y = h_page - margin
+            y -= 10
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(margin, y, "RESUMEN DE SESIÓN")
+            y -= 18
+            c.setFont("Helvetica", 10)
+            c.drawString(margin, y, f"Tormentas simuladas: {self.tormentas_count}")
+            y -= 14
+            c.drawString(margin, y, f"Blackouts en sesión: {self.blackouts_session}")
+            y -= 14
+            c.drawString(margin, y, f"Día/hora actual: DÍA {self.dia} | {self.hora:02d}:{self.minuto:02d}")
+            y -= 20
+
+            c.showPage()
+            c.save()
+        except Exception:
+            # Silencioso: no romper la UI si falla el guardado
+            pass
+
 
 if __name__ == "__main__":
     app = SimulacionUI()
